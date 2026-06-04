@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Enable wide CORS rules so your secure deployments connect flawlessly
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,23 +39,31 @@ html_content = """
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Init Map view around New Delhi tracks
         const map = L.map('map').setView([28.6140, 77.2090], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const markers = {};
 
-        // Securely switch between ws:// (local) and wss:// (encrypted Render cloud)
+        // --- FIXED WEBSOCKET URL LOGIC FOR RENDER ---
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const host = window.location.host;
-        const ws = new WebSocket(`${protocol}//${host}/ws/trains`);
+        
+        // This ensures no trailing or double slashes mess up Render's proxy router
+        const wsUrl = `${protocol}//${host}/ws/trains`.replace(/([^:]\\/)\\/+/g, "$1");
+        console.log("Connecting to WebSocket path:", wsUrl);
+        
+        const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => { 
             document.getElementById("st").innerText = "SECURE SYNC"; 
             document.getElementById("st").style.color = "#00ff66"; 
         };
-        ws.onclose = () => { 
+        ws.onclose = (e) => { 
             document.getElementById("st").innerText = "STREAM CLOSED"; 
             document.getElementById("st").style.color = "#ff3333"; 
+            console.log("WS Closed Connection Code:", e.code, e.reason);
+        };
+        ws.onerror = (err) => {
+            console.error("WebSocket Error Observed:", err);
         };
 
         ws.onmessage = (event) => {
@@ -72,7 +79,6 @@ html_content = """
             }
         };
 
-        // Automated mobile GPS pipeline simulator
         let simLng = 77.2090;
         setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -115,7 +121,6 @@ async def websocket_endpoint(websocket: WebSocket):
             raw_data = await websocket.receive_text()
             data = json.loads(raw_data)
             
-            # Map-matching math component (Snaps Lat directly to 28.6140 rail layout)
             clean_lat = 28.6140 
             clean_lng = data.get("lng")
             speed_kmh = round(data.get("speed", 0) * 3.6, 1)
@@ -132,7 +137,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    # Bind port to 8000 locally, or read dynamic port on Render cloud deployments
     import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
